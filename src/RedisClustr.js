@@ -381,7 +381,7 @@ RedisClustr.prototype.doCommand = function(cmd, conf, args) {
     var r = self.selectClient(key, conf);
     if (!r) return cb(new Error('couldn\'t get client'));
     if (!r[cmd]) return cb(new Error('NodeRedis doesn\'t know the ' + cmd + ' command'));
-    self.commandCallback(r, cmd, args, cb);
+    self.commandCallback(r, cmd, args, cb, process.hrtime());
     r[cmd].apply(r, args);
   });
 };
@@ -424,7 +424,7 @@ RedisClustr.prototype.doMultiKeyCommand = function(cmd, conf, origArgs) {
  * @param  {array}    args Arguments to be passed to the command (and to have our callback added to)
  * @param  {Function} cb   The main callback to wrap around
  */
-RedisClustr.prototype.commandCallback = function(cli, cmd, args, cb) {
+RedisClustr.prototype.commandCallback = function(cli, cmd, args, cb, time) {
   var self = this;
 
   // number of attempts/redirects when we get connection errors
@@ -459,6 +459,9 @@ RedisClustr.prototype.commandCallback = function(cli, cmd, args, cb) {
         }, Math.pow(2, 16 - Math.max(retries, 9)) * 10);
         return;
       }
+    } else if (time) {
+      var elapsed = process.hrtime(time);
+      console.info(cmd + ' execution time: %ds %dms', elapsed[0], elapsed[1] / 1000000)
     }
 
     cb(err, resp);
