@@ -6,6 +6,7 @@ var RedisBatch = require('./RedisBatch');
 var Events = require('events').EventEmitter;
 var util = require('util');
 var Queue = require('denque');
+var LogSketch = require('./LogSketch');
 
 var RedisClustr = module.exports = function(config) {
   var self = this;
@@ -39,6 +40,7 @@ var RedisClustr = module.exports = function(config) {
 };
 
 util.inherits(RedisClustr, Events);
+RedisClustr.prototype.dumpLog = LogSketch.dumpLog;
 
 RedisClustr.prototype.createClient = function(port, host) {
   var self = this;
@@ -459,9 +461,8 @@ RedisClustr.prototype.commandCallback = function(cli, cmd, args, cb, time) {
         }, Math.pow(2, 16 - Math.max(retries, 9)) * 10);
         return;
       }
-    } else if (time) {
-      var elapsed = process.hrtime(time);
-      console.info(cmd + ' execution time: %ds %dms', elapsed[0], elapsed[1] / 1000000)
+    } else if (time && retries == 16) {
+      LogSketch.logRequest(cli, cmd, args[0], process.hrtime(time));
     }
 
     cb(err, resp);
