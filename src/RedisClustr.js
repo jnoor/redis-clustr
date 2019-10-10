@@ -40,7 +40,7 @@ var RedisClustr = module.exports = function(config) {
 };
 
 util.inherits(RedisClustr, Events);
-RedisClustr.prototype.dumpLog = LogSketch.dumpLog;
+RedisClustr.prototype.printLog = LogSketch.printLog;
 
 RedisClustr.prototype.createClient = function(port, host) {
   var self = this;
@@ -462,7 +462,7 @@ RedisClustr.prototype.commandCallback = function(cli, cmd, args, cb, time) {
         return;
       }
     } else if (time && retries == 16) {
-      LogSketch.logRequest(cli, cmd, args[0], process.hrtime(time));
+      LogSketch.logRequest(cli, cmd, args[0], process.hrtime(time), self);
     }
 
     cb(err, resp);
