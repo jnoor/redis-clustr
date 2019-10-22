@@ -3,6 +3,7 @@ var calculateSlot = require('cluster-key-slot');
 var sketch = {};
 var lastStore = undefined;
 var redis = undefined;
+var addedClientToRedis = false;
 
 //NOTE: THIS ONLY SUPPORTS CONNECTIONS TO ONE REDIS INSTANCE AT A TIME...
 //TODO: Should only sketch one window at a time???
@@ -27,15 +28,24 @@ var storeSketch = function() {
   if(storing) return;
   storing = true;
 
-  //ensure client is stored in the client-key
-  console.log("Adding Client ID:", clientID);
-  redis.hset("allclients", clientID, Date.now(), function(err, resp) {
-    if (err) console.log(err);
-  });
+  sketch['time'] = Date.now()
+
   //store sketch
   redis.setex(clientID, 600, JSON.stringify(sketch), function(err, resp) {
     if (err) console.log(err);
-    else console.log("set sketch into redis.");
+    else {
+      console.log("set sketch into redis.");
+      lastStore = process.hrtime();
+
+      //ensure client is stored in the client-key
+      if (!addedClientToRedis) {
+        redis.sadd("allclients", clientID, function(err, resp) {
+          //TODO: remove client upon shutdown?
+          if (err) console.log(err);
+          else addedClientToRedis = true
+        });
+      }
+    }
     storing = false;
   });
 }
@@ -66,8 +76,9 @@ module.exports.logRequest = function(cli, cmd, key, elapsed, RedisClustr) {
 
   //check if i should dump to redis
   if (!lastStore) lastStore = process.hrtime();
-  if (process.hrtime(lastStore)[0] > 30) {
-    //it's been 10 seconds, dump.
+  var sketchDumpPeriod = 10 //number of seconds to dump
+  if (process.hrtime(lastStore)[0] > sketchDumpPeriod) {
+    //it's been sketchDumpPeriod seconds, dump.
     storeSketch()
   }
 };
