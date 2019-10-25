@@ -1,24 +1,20 @@
 var calculateSlot = require('cluster-key-slot');
 
-var sketch = {};
+var sketch = {slots:{}};
 var lastStore = undefined;
 var redis = undefined;
 var addedClientToRedis = false;
 
 //NOTE: THIS ONLY SUPPORTS CONNECTIONS TO ONE REDIS INSTANCE AT A TIME...
 //TODO: Should only sketch one window at a time???
-//TODO: Sketch slots, not keys...
 
 module.exports.printLog = function(cmd, elapsed) {
   Object.keys(sketch).forEach(function(node) {
-    Object.keys(sketch[node]).forEach(function(cmd) {
-      var sum = sketch[node][cmd].sum
-      var cnt = sketch[node][cmd].cnt
-      var keys = sketch[node][cmd].keys
-      console.log("Accessed", node, cmd, cnt, "times.", Object.keys(keys).length, "keys. Took", sum / cnt, "ms on average...");
-      // console.log(keys);
-    });
+    var sum = sketch[node].sum
+    var cnt = sketch[node].cnt
+    console.log("Accessed", node, cmd, cnt, "times. Took", sum / cnt, "ms on average...");
   });
+  console.log("Accessed ", Object.keys(sketch.slots).length, " slots:", Object.keys(sketch.slots));
 };
 
 var storing = false;
@@ -58,21 +54,17 @@ module.exports.logRequest = function(cli, cmd, key, elapsed, RedisClustr) {
   console.info(cli.address + " " + cmd + ' took %ds %dms', elapsed[0], elapsed[1] / 1000000)
   if (sketch[cli.address] === undefined) {
     sketch[cli.address] = {
-      get: {
-        cnt: 0,
-        sum: 0.0,
-        keys: {}
-      },
-      set: {
-        cnt: 0,
-        sum: 0.0,
-        keys: {}
-      }
+      cnt: 0,
+      sum: 0.0,
     }
   }
-  sketch[cli.address][cmd].cnt += 1
-  sketch[cli.address][cmd].sum += elapsed[0]*1000 + elapsed[1] / 1000000
-  sketch[cli.address][cmd].keys[key] = (sketch[cli.address][cmd].keys[key] || 0) + 1
+
+  var slot = calculateSlot(key);
+  sketch.slots[slot] = (sketch.slots[slot] || 0) + 1;
+
+  //hardset to all for now
+  sketch[cli.address].cnt += 1
+  sketch[cli.address].sum += elapsed[0]*1000 + elapsed[1] / 1000000
 
   //check if i should dump to redis
   if (!lastStore) lastStore = process.hrtime();
