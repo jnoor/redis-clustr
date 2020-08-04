@@ -83,6 +83,7 @@ var logLatency = function(host, elapsed_time) {
       sketch[host] = {
         cnt: 0,
         ddsketch: new DDSketch({alpha: 0.02}) // compute quantiles with precision of 2 percent
+      }
     }
     sketch[host].cnt += 1
     sketch[host].ddsketch.add(elapsed_time)
@@ -90,7 +91,7 @@ var logLatency = function(host, elapsed_time) {
 }
 
 var getRequestLatency = function(host) {
-  if(optimizationMetric === 'avg') {
+  if(optimizationMetric === 'avg' || sketch[host].ddsketch === undefined) {
     return sketch[host].sum / sketch[host].cnt;
   } else {
     //just 99%ile for now
