@@ -13,13 +13,26 @@ var optimizationMetric = '99'
 //this is for a single cluster
 //sketch one window at a time?
 
-module.exports.printLog = function(cmd, elapsed) {
+var enabled = true;
+module.exports.setEnabled = function(enble) {
+  enabled = enble;
+}
+
+module.exports.printLog = function() {
+  var totalsum = 0;
+  var totalcnt = 0;
   Object.keys(sketch).forEach(function(node) {
     var cnt = sketch[node].cnt
     var latency = getRequestLatency(node);
-    console.log("Accessed", node, cmd, cnt, "times. Took", latency, "ms...");
+    console.log("Accessed", node, cnt, "times. Took", latency, "ms...");
+    if(latency && cnt && cnt > 2) {
+      totalsum += latency * cnt;
+      totalcnt += cnt;
+    }
   });
-  console.log("Accessed ", Object.keys(sketch.slots).length, " slots:", Object.keys(sketch.slots));
+  console.log("Accessed ", Object.keys(sketch.slots).length, " slots");//, Object.keys(sketch.slots));
+  console.log("Overview: total of ", totalsum, "ms with", totalcnt, "requests");
+  console.log("Overview: avg latency:", totalsum/totalcnt, "ms");
 };
 
 var getStorableSketch = function() {
@@ -37,18 +50,15 @@ var getStorableSketch = function() {
   return JSON.stringify(storableSketch);
 }
 
-var storing = false;
 var clientID = require('uuid/v1')();
-var storeSketch = function() {
+module.exports.storeSketch = function(callback) {
   //check if you're already in the middle of doing this...
-  if(storing) return;
-  storing = true;
-
+  if (!enabled) return callback("Sketching disabled...");
   sketch['time'] = Date.now()
 
   //store sketch
-  redis.setex(clientID, 600, getStorableSketch(), function(err, resp) {
-    if (err) console.log(err);
+  redis.setex(clientID, 6000, getStorableSketch(), function(err, resp) {
+    if (err) return callback(err);
     else {
       console.log("set sketch into redis.");
       lastStore = process.hrtime();
@@ -57,12 +67,14 @@ var storeSketch = function() {
       if (!addedClientToRedis) {
         redis.sadd("allclients", clientID, function(err, resp) {
           //TODO: remove client upon shutdown?
-          if (err) console.log(err);
-          else addedClientToRedis = true
+          if (err) return callback(err);
+          else addedClientToRedis = true;
+          return callback(null);
         });
+      } else {
+        return callback(null);
       }
     }
-    storing = false;
   });
 }
 
@@ -102,7 +114,7 @@ var getRequestLatency = function(host) {
 module.exports.logRequest = function(cli, cmd, key, elapsed, RedisClustr) {
   redis = RedisClustr
   //only accept sets and gets (for now...)
-  if (cmd != "set" && cmd != "get") return;
+  if (cmd != "set" && cmd != "get" && cmd != "hmset" && cmd != "hgetall") return;
   
   console.info(cli.address + " " + cmd + ' took %ds %dms', elapsed[0], elapsed[1] / 1000000)
 
@@ -116,9 +128,11 @@ module.exports.logRequest = function(cli, cmd, key, elapsed, RedisClustr) {
   //check if should dump to redis
   if (!lastStore) lastStore = process.hrtime();
   var sketchDumpPeriod = 10 //number of seconds to dump
-  if (process.hrtime(lastStore)[0] > sketchDumpPeriod) {
+  if (enabled && process.hrtime(lastStore)[0] > sketchDumpPeriod) {
     //it's been sketchDumpPeriod seconds, dump.
-    storeSketch()
+    module.exports.storeSketch(function(err) {
+      if(err) console.log("ERROR", err);
+    })
   }
 };
 
